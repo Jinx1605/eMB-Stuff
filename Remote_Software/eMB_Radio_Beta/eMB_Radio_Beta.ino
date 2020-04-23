@@ -13,12 +13,15 @@
 #include <RHReliableDatagram.h>
 #include <RH_RF69.h>
 
+#include <Adafruit_NeoPixel.h>
+Adafruit_NeoPixel pixl(1, 8, NEO_GRB + NEO_KHZ800);
+
 // Where to send packets to!
 #define DEST_ADDRESS   1
 
 // change addresses for each client board, any number :)
 #define MY_ADDRESS     2
-#define LED 13
+#define LED LED_BUILTIN
 
 /************ Radio Setup ***************/
 
@@ -57,6 +60,12 @@ uint8_t crypt_key[] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
 String dateNow = "";
 String timeNow = "";
 
+const long interval = 500;           // interval at which to blink (milliseconds)
+const int ledPin =  LED_BUILTIN;
+int ledState = LOW;
+unsigned long previousMillis = 0;
+
+boolean all_good = false;
 
 void setup() {
   
@@ -66,15 +75,23 @@ void setup() {
   pinMode(z_button_pin, INPUT_PULLUP);
 
   Serial.begin(115200);
-  while (!Serial) { delay(1); } // wait until serial console is open, remove if not tethered to computer
+  // while (!Serial) { delay(1); } // wait until serial console is open, remove if not tethered to computer
 
   checkRadio();
   
-  pinMode(LED, OUTPUT);
+  pinMode(ledPin, OUTPUT);
   
+  // Init onboard NeoPixel
+  pixl.begin();
+  
+  pixl.clear();
+  pixl.setPixelColor(0, pixl.Color(0, 150, 0)); // GREEN
+  pixl.show();
+  all_good = true;
 }
 
 void checkRadio() {
+  
   pinMode(RFM69_RST, OUTPUT);
   digitalWrite(RFM69_RST, LOW);
 
@@ -86,6 +103,7 @@ void checkRadio() {
   
   if (!rf69_manager.init()) {
     Serial.println("RFM69 radio init failed");
+    all_good = false;
     while (1);
   }
   Serial.println("RFM69 radio init OK!");
@@ -94,6 +112,7 @@ void checkRadio() {
   // No encryption
   if (!rf69.setFrequency(RF69_FREQ)) {
     Serial.println("setFrequency failed");
+    all_good = false;
   }
 
   // If you are using a high power RF69 eg RFM69HW, you *must* set a Tx power with the
@@ -113,35 +132,55 @@ void loop() {
   read_joystiq();
   format_joystiq_data();
 
-  if (rf69_manager.available()) {
-  // Wait for board brain Ack
-  uint8_t len = sizeof(buf);
-  uint8_t from;
-    if (rf69_manager.recvfromAck(buf, &len, &from)) {
-     buf[len] = 0;
-     Serial.print("got request from : 0x");
-     Serial.print(from, HEX);
-     Serial.print(": ");
-     
-     decodeRemotePacket((char*)buf);
-
-     Serial.print(timeNow);
-     
-     Serial.print(" - RSSI: "); Serial.println(rf69.lastRssi(), DEC);
-    
-     // echo last button       
-     // Send data back to the board brain.
-     Serial.print("Sending: ");
-     Serial.println(radiopacket);
-     if (!rf69_manager.sendtoWait((uint8_t*)radiopacket, sizeof(radiopacket), from)){
-      Serial.println("reply to brain from remote failed");
-     }
-     digitalWrite(LED, HIGH);
-     digitalWrite(LED, LOW);
+  // Send a message to manager_server
+  if (rf69_manager.sendtoWait((uint8_t*)radiopacket, sizeof(radiopacket), DEST_ADDRESS)) {
+    // Now wait for a reply from the server
+    Serial.print("Sent: "); Serial.print(radiopacket); Serial.print(" ");
+    uint8_t len = sizeof(buf);
+    uint8_t from;   
+    if (rf69_manager.recvfromAckTimeout(buf, &len, 1000, &from)) {
+      all_good = true;
+      decodeRemotePacket((char*)buf);
+    } else {
+      Serial.println("No reply, is rf69_reliable_datagram_server running?");
     }
-  
+  } else {
+    Serial.println("No Server Listening to me...");
+    all_good = false;
+    // Serial.println("sendtoWait failed");
   }
   
+
+  /*
+  unsigned long currentMillis = millis();
+
+  if (currentMillis - previousMillis >= interval) {
+    // save the last time you blinked the LED
+    previousMillis = currentMillis;
+
+    // if the LED is off turn it on and vice-versa:
+    if (ledState == LOW) {
+      ledState = HIGH;
+    } else {
+      ledState = LOW;
+      
+    }
+
+    // Serial.println(timeNow + " : alls well!");
+    // set the LED with the ledState of the variable:
+    digitalWrite(ledPin, ledState);
+  }
+  */
+
+  if(!all_good) {
+    pixl.setPixelColor(0, pixl.Color(150, 0, 0)); // RED
+    pixl.show();
+  } else {
+    pixl.setPixelColor(0, pixl.Color(0, 150, 0)); // GREEN
+    pixl.show();
+  }
+  
+  delay(125);
 }
 
 void read_joystiq() {
@@ -177,6 +216,9 @@ void decodeRemotePacket(char* data) {
 
     timeNow = the_data.substring(0, ind1);
     dateNow = the_data.substring(ind1+1,ind2);
+
+    Serial.print("Recieved: ");
+    Serial.println(the_data);
     
 }
 
