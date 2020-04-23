@@ -73,24 +73,30 @@ void Radio_Decode(char* data) {
 }
 
 void Radio_Read() {
-  if (rf69_manager.sendtoWait((uint8_t *)radiopacket, strlen(radiopacket), DEST_ADDRESS)) {
-    // Now wait for a reply from the server
+  
+  if (rf69_manager.available()) {
+    // Wait for a message addressed to us from the client
     uint8_t len = sizeof(buf);
     uint8_t from;
-    if (rf69_manager.recvfromAckTimeout(buf, &len, 500, &from)) {
-      //killswitch(false);
-      buf[len] = 0;
-      //      Serial.print("Remote #");
-      //      Serial.print(from); Serial.print(": ");
-      //      Serial.println((char*)buf);
-
-      Radio_Decode((char*)buf);
-    }
-  } else {
-    if (joystick_connected) {
-      //killswitch(true);
+    if (rf69_manager.recvfromAck(buf, &len, &from)) {
+      joystick_connected = true;
+      all_good = true;
+      Serial.print("got request from : 0x");
+      Serial.print(from, HEX);
+      Serial.print(": ");
+      Serial.println((char*)buf);
+      
+      unsigned long currentMillis = millis();
+      lastHeardFrom = currentMillis;
+      
+      // Send a reply back to the originator client
+      if (!rf69_manager.sendtoWait((uint8_t*)radiopacket, sizeof(radiopacket), from)){
+        Serial.println("sendtoWait failed");
+        all_good = false;
+      }
     }
   }
+  
 }
 
 void Radio_Packetize() {
@@ -99,8 +105,8 @@ void Radio_Packetize() {
   data_to_send = timeNow;
   data_to_send += ",";
   data_to_send += dateNow;
-
-  Serial.println(data_to_send);
+  
+  // Serial.print("Data to Send: "); Serial.println(data_to_send);
 
   data_to_send.toCharArray(radiopacket, data_to_send.length() + 1);
 }

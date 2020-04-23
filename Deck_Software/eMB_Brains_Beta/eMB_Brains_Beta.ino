@@ -67,6 +67,9 @@ uint8_t buf[RH_RF69_MAX_MESSAGE_LEN];
 uint8_t data[] = "";
 char radiopacket[RH_RF69_MAX_MESSAGE_LEN] = "";
 
+#include <Adafruit_NeoPixel.h>
+Adafruit_NeoPixel pixl(1, 40, NEO_GRB + NEO_KHZ800);
+
 // ** Global Use Data ** //
 
 String logName = "";
@@ -87,21 +90,40 @@ int joystick_info[6] = {
   0  // battery voltage
 };
 
+const long interval = 1000;           // interval at which to blink (milliseconds)
+const int ledPin =  LED_BUILTIN;
+int ledState = LOW;
+unsigned long previousMillis = 0;
+unsigned long lastHeardFrom = 0;
+
+boolean all_good = false;
+short loopCount = 0;
 
 void setup() {
   // put your setup code here, to run once:
+
+  pinMode(ledPin, OUTPUT);
+
+  
   Serial.begin(115200);
-  while(!Serial);
+  //while(!Serial);
 
   RTC_Init();
 
   if(!MLX90614_Init()){
     Serial.println("MLX90614 Temp Module Missing!");
-    delay(1);
   }
 
   Radio_Init();
 
+  // Init onboard NeoPixel
+  pixl.begin();
+  
+  pixl.clear();
+  pixl.setPixelColor(0, pixl.Color(0, 150, 0)); // GREEN
+  pixl.show();
+  all_good = true;
+  
 }
 
 void ESC_Init(int FreeWheel) {
@@ -189,4 +211,39 @@ void loop() {
   
   Radio_Packetize();
   Radio_Read();
+
+  loopCount++;
+
+  if (loopCount == 5 || loopCount == 15) {
+    //update oled every half second
+    // Serial.println("update oled");
+    //Serial.print("LoopCount : ");
+    //Serial.println(loopCount);
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastHeardFrom >= 500) {
+      //previousMillis = currentMillis;
+      joystick_connected = false;
+      all_good = false;                
+      //Serial.println(timeNow + " : alls well!");
+    }
+    
+  } else if (loopCount == 10 || loopCount == 20) {
+    // Serial.println("oled update and log time!");
+    // log every secondish :P
+    //if () { }
+    //Serial.print("JoyStiic : ");
+    //Serial.print(joystick_connected);
+    //Serial.print(" - LoopCount : ");
+    //Serial.println(loopCount);
+    loopCount = 0;
+  }
+
+  if(!all_good){
+    pixl.setPixelColor(0, pixl.Color(150, 0, 0)); // RED
+    pixl.show();
+  } else {
+    pixl.setPixelColor(0, pixl.Color(0, 150, 0)); // GREEN
+    pixl.show();
+  }
+  
 }
